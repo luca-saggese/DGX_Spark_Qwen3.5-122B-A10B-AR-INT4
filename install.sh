@@ -393,84 +393,6 @@ else
     fi
     note "pinned torch=${TORCH_VERSION} (and matching torchvision/torchaudio) in both stages"
 
-    # Backport eugr PR #263 / commit a75af4b: fix issue #265 (torch CPU-wheel
-    # downgrade). After torch is installed, later `uv pip install` calls
-    # (wheel install, ray) trigger a fresh dependency resolution. Since
-    # 2026-05-26 NVIDIA publishes newer nvidia-cuda-* (13.3.x) to PyPI; uv
-    # prefers the newest, which conflicts with the CUDA torch's exact pins, so
-    # uv swaps in the CPU-only PyPI torch (no libtorch_cuda.so → vllm._C
-    # ImportError at runtime). Fix: capture the live torch version and force
-    # it via --override on every subsequent uv pip install in the runner stage.
-    if grep -q 'PINNED_TORCH' "${SPARK_VLLM_DIR}/Dockerfile"; then
-        note "torch-downgrade override (#265) already applied — skipping"
-    else
-        python3 - "${SPARK_VLLM_DIR}/Dockerfile" <<'PYEOF'
-import sys
-
-path = sys.argv[1]
-txt = open(path).read()
-
-# ── Patch A: wheel install block ──────────────────────────────────────────────
-# Restructure the PRE_TRANSFORMERS if/else so:
-#   1. PINNED_TORCH is captured from the live environment
-#   2. torch==${PINNED_TORCH} is written to /tmp/wheel-override.txt
-#   3. transformers>=5.0.0 is still appended when PRE_TRANSFORMERS=1 (preserved)
-#   4. Both branches use a single --override /tmp/wheel-override.txt path
-OLD_WHEEL = (
-    '    if [ "$PRE_TRANSFORMERS" = "1" ]; then \\\n'
-    '        echo "transformers>=5.0.0" > /tmp/tf-override.txt && \\\n'
-    '        uv pip install /workspace/wheels/*.whl --override /tmp/tf-override.txt; \\\n'
-    '    else \\\n'
-    '        uv pip install /workspace/wheels/*.whl; \\\n'
-    '    fi'
-)
-NEW_WHEEL = (
-    '    PINNED_TORCH=$(python3 -c "import torch; print(torch.__version__)") && \\\n'
-    '    echo "torch==${PINNED_TORCH}" > /tmp/wheel-override.txt && \\\n'
-    '    if [ "$PRE_TRANSFORMERS" = "1" ]; then \\\n'
-    '        echo "transformers>=5.0.0" >> /tmp/wheel-override.txt; \\\n'
-    '    fi && \\\n'
-    '    uv pip install /workspace/wheels/*.whl --override /tmp/wheel-override.txt'
-)
-if OLD_WHEEL not in txt:
-    print("FAIL: wheel-install block not found in Dockerfile — shape may have drifted from pinned SHA", file=sys.stderr)
-    sys.exit(1)
-txt = txt.replace(OLD_WHEEL, NEW_WHEEL, 1)
-
-# ── Patch B: ray / fastsafetensors install ────────────────────────────────────
-OLD_RAY = '    uv pip install ray[default] fastsafetensors'
-NEW_RAY = (
-    '    PINNED_TORCH=$(python3 -c "import torch; print(torch.__version__)") && \\\n'
-    '    echo "torch==${PINNED_TORCH}" > /tmp/ray-override.txt && \\\n'
-    '    uv pip install ray[default] fastsafetensors --override /tmp/ray-override.txt'
-)
-if OLD_RAY not in txt:
-    print("FAIL: ray install line not found in Dockerfile — shape may have drifted from pinned SHA", file=sys.stderr)
-    sys.exit(1)
-txt = txt.replace(OLD_RAY, NEW_RAY, 1)
-
-open(path, 'w').write(txt)
-PYEOF
-
-        # Sanity: all expected anchors must be present and no unprotected form remains
-        if ! grep -q 'PINNED_TORCH' "${SPARK_VLLM_DIR}/Dockerfile"; then
-            abort "torch-downgrade override (#265) did not land — Python patch failed silently."
-        fi
-        if ! grep -qF 'uv pip install /workspace/wheels/*.whl --override /tmp/wheel-override.txt' \
-                "${SPARK_VLLM_DIR}/Dockerfile"; then
-            abort "wheel-override.txt --override not found after patch (#265) — wheel install not hardened."
-        fi
-        # The old unprotected else-branch ended with `*.whl;` — must be gone
-        if grep -qF 'uv pip install /workspace/wheels/*.whl;' "${SPARK_VLLM_DIR}/Dockerfile"; then
-            abort "unprotected 'uv pip install /workspace/wheels/*.whl;' still present after patch (#265) — refusing to build."
-        fi
-        if ! grep -qF 'uv pip install ray[default] fastsafetensors --override /tmp/ray-override.txt' \
-                "${SPARK_VLLM_DIR}/Dockerfile"; then
-            abort "ray-override.txt --override not found after patch (#265) — ray install not hardened."
-        fi
-        note "torch-downgrade override (#265): wheel and ray installs now pin live torch via --override"
-    fi
-
     # Suppress deprecation warning spam from CUTLASS×CUDA13: when nvcc compiles
     # vllm-flash-attn against CUTLASS, the host gcc emits hundreds of
     # 'double4 is deprecated, use double4_16a' warnings (CUTLASS hasn't
@@ -515,13 +437,87 @@ PYEOF
         note "PR #38325 (swapAB FP8 SM120) will be applied during vLLM build"
     fi
 
+    # ── issue #265: preventively pin torch so a later uv resolution can't swap it ──
+    # Since 2026-05-26 NVIDIA ships newer CUDA wheels (nvidia-cuda-runtime 13.3.x,
+    # nvidia-cublas 13.5.x, etc.) on PyPI. flashinfer's wheel declares an
+    # *unconstrained* torch dependency, so a runner-stage `uv pip install` can
+    # re-resolve the graph, prefer the newest CUDA libs (which conflict with the
+    # cu130 torch's exact nvidia-cuda-* pins) and fall back to the only torch
+    # without CUDA deps — the CPU wheel. vllm._C was compiled against CUDA torch,
+    # so the container would then die at startup with
+    #   ImportError: libtorch_cuda.so: cannot open shared object file
+    # Backports the override approach from the upstream spark-vllm-docker fix
+    # (PR #263 / issue #265).
+    #
+    # Applied preventively: capture the live (CUDA) torch right before each
+    # post-torch runner install and force it via uv --override, so the resolver
+    # can never swap it. This is a verified no-op for builds that already produce
+    # a CUDA torch — the override pins torch to whatever is already installed (the
+    # correct cu130 wheel), so it can only PREVENT a downgrade, never cause one;
+    # setups that build correctly today are left behaviourally unchanged. The
+    # post-build check further down confirms the result and refuses a CPU image.
+    if grep -q 'PINNED_TORCH' "${SPARK_VLLM_DIR}/Dockerfile"; then
+        note "issue #265: torch --override already present in Dockerfile — keeping it"
+    else
+        # Harden whichever post-torch install sites exist: the wheel-install block
+        # and the ray/fastsafetensors line. Each is patched only if its exact
+        # anchor is present, so a drifted upstream Dockerfile degrades gracefully
+        # (whatever can be hardened, is) and the post-build check stays the backstop.
+        _n265=$(python3 - "${SPARK_VLLM_DIR}/Dockerfile" <<'PYEOF'
+import sys
+path = sys.argv[1]
+txt = open(path).read()
+n = 0
+
+# Site A — wheel install (preserves the PRE_TRANSFORMERS / transformers>=5 branch).
+OLD_WHEEL = (
+    '    if [ "$PRE_TRANSFORMERS" = "1" ]; then \\\n'
+    '        echo "transformers>=5.0.0" > /tmp/tf-override.txt && \\\n'
+    '        uv pip install /workspace/wheels/*.whl --override /tmp/tf-override.txt; \\\n'
+    '    else \\\n'
+    '        uv pip install /workspace/wheels/*.whl; \\\n'
+    '    fi'
+)
+NEW_WHEEL = (
+    '    PINNED_TORCH=$(python3 -c "import torch; print(torch.__version__)") && \\\n'
+    '    echo "torch==${PINNED_TORCH}" > /tmp/wheel-override.txt && \\\n'
+    '    if [ "$PRE_TRANSFORMERS" = "1" ]; then \\\n'
+    '        echo "transformers>=5.0.0" >> /tmp/wheel-override.txt; \\\n'
+    '    fi && \\\n'
+    '    uv pip install /workspace/wheels/*.whl --override /tmp/wheel-override.txt'
+)
+if OLD_WHEEL in txt:
+    txt = txt.replace(OLD_WHEEL, NEW_WHEEL, 1); n += 1
+
+# Site B — ray / fastsafetensors install.
+OLD_RAY = '    uv pip install ray[default] fastsafetensors'
+NEW_RAY = (
+    '    PINNED_TORCH=$(python3 -c "import torch; print(torch.__version__)") && \\\n'
+    '    echo "torch==${PINNED_TORCH}" > /tmp/ray-override.txt && \\\n'
+    '    uv pip install ray[default] fastsafetensors --override /tmp/ray-override.txt'
+)
+if OLD_RAY in txt:
+    txt = txt.replace(OLD_RAY, NEW_RAY, 1); n += 1
+
+open(path, 'w').write(txt)
+print(n)
+PYEOF
+)
+        case "${_n265:-0}" in
+            0) warn "issue #265: no known install anchors in the Dockerfile — upstream shape drifted; relying on the post-build check below" ;;
+            *) note "issue #265: preventive torch --override applied to ${_n265} runner install site(s)" ;;
+        esac
+        if grep -qF 'uv pip install /workspace/wheels/*.whl;' "${SPARK_VLLM_DIR}/Dockerfile"; then
+            abort "issue #265: an unprotected wheel install remained after patching — refusing to build."
+        fi
+    fi
+
     # Build (must use build-and-copy.sh, not bare 'docker build', because the
     # upstream Dockerfile COPYs build-metadata.yaml which the script generates
     # at build time and removes on exit). --vllm-ref v0.19.0 + --tf5 are not
-    # script defaults — they match the build_args of our reference image.
-    # Note: build-and-copy.sh has no --no-cache flag of its own; cache is
-    # already invalidated above (we ran 'docker builder prune -af' if --no-cache
-    # was passed to install.sh).
+    # script defaults — they match the build_args of the reference image.
+    # build-and-copy.sh has no --no-cache flag of its own; cache is already
+    # invalidated above ('docker builder prune -af' if --no-cache was passed).
     (
         cd "${SPARK_VLLM_DIR}"
         ./build-and-copy.sh -t "${SM121_IMAGE}" --vllm-ref v0.19.0 --tf5 2>&1
@@ -530,17 +526,23 @@ PYEOF
     docker image inspect "${SM121_IMAGE}:latest" >/dev/null 2>&1 \
         || abort "${SM121_IMAGE}:latest is not in 'docker images' after build-and-copy.sh — something failed silently."
 
-    # Verify the built image ships a CUDA torch, not the CPU-only PyPI downgrade
-    # (issue #265). We check the version string only (not cuda.is_available())
-    # because the latter requires --gpus access and a live CUDA driver, which
-    # may not be present in headless build environments. The CPU wheel always
-    # has '+cpu' in its version; the CUDA wheel always has '+cu'. A broken image
-    # would fail at vllm._C import with 'libtorch_cuda.so: No such file'.
-    note "verifying ${SM121_IMAGE}:latest has a CUDA torch (issue #265 guard)..."
-    docker run --rm "${SM121_IMAGE}:latest" python3 -c \
-        'import torch,sys; v=torch.__version__; print(v, torch.cuda.is_available()); sys.exit(0 if "+cu" in v else 1)' \
-        || abort "built image has CPU/mismatched torch (issue #265) — libtorch_cuda.so will be missing at runtime. Rebuild with --no-cache."
-    note "CUDA torch confirmed in ${SM121_IMAGE}:latest"
+    # Verify the built image ships a CUDA torch ('+cu'); the issue-#265 failure is
+    # the '+cpu' wheel. torch.cuda.is_available() is not asserted (it needs --gpus
+    # and a live driver, absent in a headless build) but the version suffix is
+    # reliable. A non-CUDA result means a downgrade path the preventive --override
+    # did not cover — refuse to leave a broken image as :latest rather than fail
+    # later at runtime with 'libtorch_cuda.so: cannot open shared object file'.
+    torch_flavour() {
+        docker run --rm "${SM121_IMAGE}:latest" python3 -c \
+            'import torch; print(torch.__version__)' 2>/dev/null | tr -d '\r'
+    }
+    note "issue #265: verifying torch flavour in ${SM121_IMAGE}:latest ..."
+    _tv=$(torch_flavour) || true
+    case "$_tv" in
+        *+cu*) ok "issue #265: ${SM121_IMAGE}:latest ships CUDA torch ('${_tv}') — guard satisfied" ;;
+        '')    abort "issue #265: could not read torch from ${SM121_IMAGE}:latest — cannot confirm a CUDA build. Investigate before use." ;;
+        *)     abort "issue #265: ${SM121_IMAGE}:latest shipped a non-CUDA torch ('${_tv}') despite the preventive --override — a downgrade path the guard does not cover. See README troubleshooting; refusing to leave a broken image as :latest." ;;
+    esac
     step_end
 fi
 
