@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Add MTP (Multi-Token Prediction) weights to a hybrid INT4+FP8 checkpoint.
 
-Intel AutoRound INT4 includes MTP weights in model_extra_tensors.safetensors
+happypatrick/Qwen3.5-122B-A10B-heretic-int4-AutoRound includes MTP weights in model_extra_tensors.safetensors
 but does not reference them in the model index. This script copies the file
 and updates model.safetensors.index.json so vLLM can load MTP heads for
 speculative decoding.
 
 Usage:
     python add-mtp-weights.py \
-        --source ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/snapshots/<hash> \
+        --source ~/.cache/huggingface/hub/models--happypatrick--Qwen3.5-122B-A10B-heretic-int4-AutoRound/snapshots/<hash> \
         --target /path/to/hybrid-checkpoint
 """
 
@@ -25,7 +25,7 @@ def main():
     parser.add_argument(
         "--source",
         required=True,
-        help="Path to Intel AutoRound checkpoint (contains model_extra_tensors.safetensors)",
+        help="Path to happypatrick/Qwen3.5-122B-A10B-heretic-int4-AutoRound checkpoint (contains model_extra_tensors.safetensors)",
     )
     parser.add_argument(
         "--target",

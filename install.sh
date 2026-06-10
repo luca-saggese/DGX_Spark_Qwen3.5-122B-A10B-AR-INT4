@@ -3,7 +3,7 @@
 # install.sh — automated build pipeline for DGX_Spark Qwen3.5-122B v2 (Steps 0-4).
 #
 # Walks through the Quick Start of README.md from a fresh clone:
-#   0. Download Intel/Qwen3.5-122B-A10B-int4-AutoRound (~75 GB if not cached)
+#   0. Download happypatrick/Qwen3.5-122B-A10B-heretic-int4-AutoRound (~75 GB if not cached)
 #   1. Build hybrid INT4+FP8 checkpoint               (~20 min, +9% perf, optional)
 #   2. Add MTP speculative decoding weights
 #   3. Build base vLLM image for SM121                (~30-60 min, runs Docker)
@@ -267,7 +267,7 @@ note "hf:   $(hf --version 2>/dev/null || echo 'not present')"
 step_end
 
 # ── Step 0: hf download ───────────────────────────────────────────────────────
-step_begin "Step 0 — Downloading Intel/Qwen3.5-122B-A10B-int4-AutoRound" \
+step_begin "Step 0 — Downloading happypatrick/Qwen3.5-122B-A10B-heretic-int4-AutoRound" \
            "first time: ~75 GB with progress bars; cached: instant"
 
 # Two-pass approach:
@@ -281,8 +281,8 @@ step_begin "Step 0 — Downloading Intel/Qwen3.5-122B-A10B-int4-AutoRound" \
 #            multiple snapshot directories coexisted in cache (e.g. the
 #            user ran 'hf download' at different times and Intel shipped
 #            a new revision in between).
-hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound
-INTEL_DIR=$(hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound --quiet)
+hf download happypatrick/Qwen3.5-122B-A10B-heretic-int4-AutoRound
+INTEL_DIR=$(hf download happypatrick/Qwen3.5-122B-A10B-heretic-int4-AutoRound --quiet)
 [ -d "$INTEL_DIR" ] || abort "INTEL_DIR not found after hf download: '${INTEL_DIR}' is not a directory. Check your HF cache config (HF_HOME, HF_HUB_CACHE)."
 note "INTEL_DIR=${INTEL_DIR}"
 step_end
