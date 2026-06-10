@@ -2,7 +2,7 @@
 #!/bin/bash
 docker rm vllm-qwen35
 sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
-docker run -it --name vllm-qwen35 \
+docker run -d --name vllm-qwen35 \
   --gpus all --net=host --ipc=host \
   -v ~/models:/models \
   vllm-qwen35-v2 \
