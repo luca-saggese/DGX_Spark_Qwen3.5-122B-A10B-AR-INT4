@@ -304,6 +304,8 @@ else
     step_end
 fi
 
+#wget https://huggingface.co/Intel/Qwen3.5-122B-A10B-int4-AutoRound/resolve/main/model_extra_tensors.safetensors
+
 # ── Step 2: MTP weights ───────────────────────────────────────────────────────
 if [ -f "${MODEL_DIR}/model_extra_tensors.safetensors" ] \
     && grep -q '"mtp\.' "${MODEL_DIR}/model.safetensors.index.json" 2>/dev/null; then
@@ -312,9 +314,42 @@ if [ -f "${MODEL_DIR}/model_extra_tensors.safetensors" ] \
 else
     step_begin "Step 2 — Adding MTP speculative decoding weights" \
                "copies model_extra_tensors.safetensors (~5 GB) and registers 785 tensors in the index"
+
+    # 1. Verifica che model_extra_tensors.safetensors esista nella sorgente, altrimenti lo scarica da Intel
+    if [ ! -f "${INTEL_DIR}/model_extra_tensors.safetensors" ]; then
+        note "model_extra_tensors.safetensors missing from source, downloading from Intel repository..."
+        hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound model_extra_tensors.safetensors --local-dir "${INTEL_DIR}" --quiet
+    fi
+
+    # 2. Verifica se l'indice sorgente contiene effettivamente le chiavi MTP
+    RUN_SOURCE_DIR="${INTEL_DIR}"
+    if ! grep -q '"mtp\.' "${INTEL_DIR}/model.safetensors.index.json" 2>/dev/null; then
+        note "Source index is missing MTP mappings (likely due to a custom/heretic model)."
+        note "Downloading the original Intel index file to construct a valid mapping source..."
+        
+        # Crea una cartella temporanea sicura
+        TEMP_MTP_DIR=$(mktemp -d)
+        
+        # Scarica solo l'indice originale da Intel
+        hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound model.safetensors.index.json --local-dir "${TEMP_MTP_DIR}" --quiet
+        
+        # Collega il file dei pesi MTP esistente nella cartella temporanea
+        ln -sf "${INTEL_DIR}/model_extra_tensors.safetensors" "${TEMP_MTP_DIR}/model_extra_tensors.safetensors"
+        
+        # Reindirizza la sorgente dello script alla cartella temporanea d'appoggio
+        RUN_SOURCE_DIR="${TEMP_MTP_DIR}"
+    fi
+
+    # 3. Esegue lo script originale di mappatura
     python "${PROJECT_DIR}/patches/02-mtp-speculative/add-mtp-weights.py" \
-        --source "${INTEL_DIR}" \
+        --source "${RUN_SOURCE_DIR}" \
         --target "${MODEL_DIR}"
+
+    # Pulisce la cartella temporanea se creata
+    if [ "${RUN_SOURCE_DIR}" != "${INTEL_DIR}" ]; then
+        rm -rf "${RUN_SOURCE_DIR}"
+    fi
+
     step_end
 fi
 
