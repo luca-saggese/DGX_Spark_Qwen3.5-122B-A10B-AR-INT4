@@ -8,7 +8,6 @@ docker run -d --name vllm-qwen35 \
   vllm-qwen35-v2 \
   serve /models/qwen35-122b-hybrid-int4fp8 \
   --served-model-name qwen/qwen3.5 \
-  --max-model-len 196608 \
   --max-num-batched-tokens 32768 \
   --gpu-memory-utilization 0.88 \
   --port 8000 \
