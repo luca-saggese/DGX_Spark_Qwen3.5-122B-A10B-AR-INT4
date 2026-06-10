@@ -17,7 +17,7 @@ docker run -d --name vllm-qwen35 \
   --enable-auto-tool-choice \
   --tool-call-parser qwen3_coder \
   --attention-backend FLASHINFER \
-  --speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":2}'
+  --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
 
 #   --load-format fastsafetensors \
 #   --attention-backend FLASHINFER \
