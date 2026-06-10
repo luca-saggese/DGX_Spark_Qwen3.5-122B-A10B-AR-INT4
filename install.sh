@@ -55,7 +55,7 @@ SPARK_VLLM_PIN="49d6d9fefd7cd05e63af8b28e4b514e9d30d249f"
 # vllm/_C.abi3.so and libtorch_cuda.so. The observed failure mode is a fatal
 # ImportError at startup: "undefined symbol: _ZN2at4cuda24getCurrentCUDABlasHandleEv".
 # Pinning both stages to the same date eliminates the drift.
-TORCH_NIGHTLY_DATE="20260408"
+TORCH_NIGHTLY_DATE="20260415"
 TORCH_VERSION="2.12.0.dev${TORCH_NIGHTLY_DATE}+cu130"
 TORCHVISION_VERSION="0.27.0.dev${TORCH_NIGHTLY_DATE}+cu130"
 TORCHAUDIO_VERSION="2.11.0.dev${TORCH_NIGHTLY_DATE}+cu130"
