@@ -13,7 +13,7 @@ docker run -ti --rm --name vllm-server \
     -e VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 \
     -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
     vllm-qwen35-v2 \
-    /models/${MODEL} \
+    serve /models/${MODEL} \
     --disable-custom-all-reduce \
     --attention-backend FLASHINFER \
     --max-model-len 524288 \
