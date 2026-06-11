@@ -14,7 +14,7 @@ docker run -ti --rm --name vllm-server \
     -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
     vllm-qwen35-v2 \
     serve ${MODEL} \
-    -served-model-name qwen/qwen3.5 \
+    --served-model-name qwen/qwen3.5 \
     --max-num-batched-tokens 32768 \
     --gpu-memory-utilization 0.88 \
     --port 8000 \
