@@ -13,7 +13,7 @@ docker run -ti --rm --name vllm-server \
     -e VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 \
     -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
     vllm/vllm-openai:v0.19.0 \
-    serve '${MODEL}' \
+    serve "protoLabsAI/Qwen3.6-35B-A3B-uncensored-heretic-FP8" \
     --disable-custom-all-reduce \
     --attention-backend FLASHINFER \
     --max-model-len 524288 \
