@@ -32,5 +32,5 @@ docker run -d --rm --name vllm-server \
     --tokenizer-mode auto \
     --limit-mm-per-prompt '{"image":5, "video":0}' \
     --speculative-config '{"method":"mtp", "num_speculative_tokens":2}' \
-    --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' \   
+    --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' \
     --served-model-name qwen/qwen3.5 
