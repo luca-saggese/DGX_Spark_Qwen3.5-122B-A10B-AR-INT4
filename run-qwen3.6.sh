@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODEL="Qwen3.6-35B-A3B-FP8"
+MODEL="protoLabsAI/Qwen3.6-35B-A3B-uncensored-heretic-FP8"
 PORT=8080
 VLLM_PORT=8000
 
@@ -13,7 +13,7 @@ docker run -ti --rm --name vllm-server \
     -e VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 \
     -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
     vllm-qwen35-v2 \
-    serve /models/${MODEL} \
+    serve ${MODEL} \
     --disable-custom-all-reduce \
     --attention-backend FLASHINFER \
     --max-model-len 524288 \
