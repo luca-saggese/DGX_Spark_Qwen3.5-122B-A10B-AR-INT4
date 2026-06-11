@@ -4,7 +4,7 @@ MODEL="Qwen3.6-35B-A3B-FP8"
 PORT=8080
 VLLM_PORT=8000
 
-docker run -d --rm --name vllm-server \
+docker run -ti --rm --name vllm-server \
     --gpus all --net=host --ipc=host \
     -v ~/models:/models \
     -e NCCL_P2P_DISABLE=1 \
