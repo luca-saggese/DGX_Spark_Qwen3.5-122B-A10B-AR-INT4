@@ -12,7 +12,7 @@ docker run -d --rm --name vllm-server \
     -e VLLM_USE_DEEP_GEMM=0 \
     -e VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 \
     -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-    vllm/vllm-openai:v0.19.0 \
+    vllm-qwen35-v2 \
     /models/${MODEL} \
     --disable-custom-all-reduce \
     --attention-backend FLASHINFER \
